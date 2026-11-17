@@ -2,7 +2,6 @@
 import customtkinter as ctk
 from tkinter import ttk, messagebox
 from database.conexion import obtener_conexion
-from views.dashboard_kpis import VentanaDirectorio
 
 class VistaHorarios(ctk.CTkFrame):
     def __init__(self, parent):
@@ -14,35 +13,20 @@ class VistaHorarios(ctk.CTkFrame):
     def crear_interfaz(self):
         header = ctk.CTkFrame(self, fg_color="transparent")
         header.pack(fill="x", padx=15, pady=15)
-        
         ctk.CTkLabel(header, text="⏰ Gestión y Asignación Masiva de Horarios", font=ctk.CTkFont(size=18, weight="bold")).pack(side="left")
 
-        # Botones de acción rápida en la cabecera (Directorio y Recargar)
-        acciones_header = ctk.CTkFrame(header, fg_color="transparent")
-        acciones_header.pack(side="right")
-
-        self.btn_directorio = ctk.CTkButton(
-            acciones_header, text="📖 Directorio", fg_color="#4B5563", hover_color="#374151", width=100,
-            command=lambda: VentanaDirectorio(self)
-        )
-        self.btn_directorio.pack(side="left", padx=5)
-
-        self.btn_recargar = ctk.CTkButton(
-            acciones_header, text="🔄 Recargar", width=90, command=self.cargar_maestros
-        )
-        self.btn_recargar.pack(side="left", padx=5)
-
+        # Contenedor principal en dos columnas
         main_container = ctk.CTkFrame(self, fg_color="transparent")
         main_container.pack(fill="both", expand=True, padx=15, pady=(0, 15))
 
-        # --- PANEL IZQUIERDO: Lista de Docentes ---
-        left_frame = ctk.CTkFrame(main_container, width=300)
+        # --- PANEL IZQUIERDO: Lista de Docentes (Nombres reales + Búsqueda + Multiselección) ---
+        left_frame = ctk.CTkFrame(main_container, width=320)
         left_frame.pack(side="left", fill="both", expand=False, padx=(0, 10))
         left_frame.pack_propagate(False)
 
         ctk.CTkLabel(left_frame, text="Seleccione Docente(s) (Ctrl+Click)", font=ctk.CTkFont(weight="bold", size=11)).pack(anchor="w", padx=10, pady=10)
         
-        self.entry_buscar_docente = ctk.CTkEntry(left_frame, placeholder_text="Buscar docente...")
+        self.entry_buscar_docente = ctk.CTkEntry(left_frame, placeholder_text="Buscar por nombre o ID...")
         self.entry_buscar_docente.pack(fill="x", padx=10, pady=(0, 10))
         self.entry_buscar_docente.bind("<KeyRelease>", self.cargar_maestros)
 
@@ -51,9 +35,9 @@ class VistaHorarios(ctk.CTkFrame):
 
         self.tabla_docentes = ttk.Treeview(doc_container, columns=("id", "nombre"), show="headings", height=15, selectmode="extended")
         self.tabla_docentes.heading("id", text="ID")
-        self.tabla_docentes.heading("nombre", text="Docente")
-        self.tabla_docentes.column("id", width=60, anchor="center")
-        self.tabla_docentes.column("nombre", width=200, anchor="w")
+        self.tabla_docentes.heading("nombre", text="Nombre del Docente")
+        self.tabla_docentes.column("id", width=50, anchor="center")
+        self.tabla_docentes.column("nombre", width=230, anchor="w")
 
         scroll_doc = ttk.Scrollbar(doc_container, orient="vertical", command=self.tabla_docentes.yview)
         self.tabla_docentes.configure(yscrollcommand=scroll_doc.set)
@@ -62,13 +46,14 @@ class VistaHorarios(ctk.CTkFrame):
         self.tabla_docentes.pack(side="left", fill="both", expand=True)
         self.tabla_docentes.bind("<<TreeviewSelect>>", self.cambiar_seleccion_docentes)
 
-        # --- PANEL DERECHO ---
+        # --- PANEL DERECHO: Formulario y Horarios ---
         right_frame = ctk.CTkFrame(main_container)
         right_frame.pack(side="right", fill="both", expand=True, padx=(10, 0))
 
         self.lbl_titulo_horarios = ctk.CTkLabel(right_frame, text="Seleccione uno o varios docentes para asignar horarios", font=ctk.CTkFont(weight="bold", size=15))
         self.lbl_titulo_horarios.pack(anchor="w", padx=15, pady=15)
 
+        # Formulario para agregar horario individual
         form_frame = ctk.CTkFrame(right_frame, fg_color="transparent")
         form_frame.pack(fill="x", padx=15, pady=(0, 10))
 
@@ -88,6 +73,7 @@ class VistaHorarios(ctk.CTkFrame):
         self.btn_agregar_horario = ctk.CTkButton(form_frame, text="➕ Asignar Día", fg_color="#2563EB", hover_color="#1D4ED8", command=self.guardar_horario, state="disabled", width=110)
         self.btn_agregar_horario.grid(row=1, column=3, padx=15, pady=5)
 
+        # Panel de Asignación Masiva Rápida
         quick_frame = ctk.CTkFrame(right_frame, fg_color="#1E293B", corner_radius=8)
         quick_frame.pack(fill="x", padx=15, pady=(0, 15))
 
@@ -108,6 +94,7 @@ class VistaHorarios(ctk.CTkFrame):
         )
         self.btn_ls.pack(side="left")
 
+        # Tabla de Horarios
         tabla_hor_container = ctk.CTkFrame(right_frame, fg_color="transparent")
         tabla_hor_container.pack(fill="both", expand=True, padx=15, pady=(0, 15))
 
@@ -146,8 +133,7 @@ class VistaHorarios(ctk.CTkFrame):
 
             for row in cursor.fetchall():
                 id_docente, nombre = row
-                etiqueta = f"Docente ID #{id_docente}"
-                self.tabla_docentes.insert("", "end", values=(id_docente, etiqueta))
+                self.tabla_docentes.insert("", "end", values=(id_docente, nombre))
             conn.close()
         except Exception as e:
             print("Error cargando maestros:", e)
@@ -168,7 +154,8 @@ class VistaHorarios(ctk.CTkFrame):
         
         if len(self.ids_maestros_seleccionados) == 1:
             id_unico = self.ids_maestros_seleccionados[0]
-            self.lbl_titulo_horarios.configure(text=f"Horarios para: Docente ID #{id_unico}")
+            nombre_unico = self.tabla_docentes.item(selecciones[0])['values'][1]
+            self.lbl_titulo_horarios.configure(text=f"Horarios para: {nombre_unico}")
             self.cargar_horarios_docente(id_unico)
         else:
             self.lbl_titulo_horarios.configure(text=f"⚡ Asignación Masiva a {len(self.ids_maestros_seleccionados)} docentes seleccionados")
@@ -235,7 +222,6 @@ class VistaHorarios(ctk.CTkFrame):
                 self.cargar_horarios_docente(self.ids_maestros_seleccionados[0])
             self.entry_entrada.delete(0, 'end')
             self.entry_salida.delete(0, 'end')
-
         except Exception as e:
             messagebox.showerror("Error", f"No se pudo guardar el horario:\n{str(e)}")
 
@@ -269,7 +255,6 @@ class VistaHorarios(ctk.CTkFrame):
                 self.cargar_horarios_docente(self.ids_maestros_seleccionados[0])
             self.entry_entrada.delete(0, 'end')
             self.entry_salida.delete(0, 'end')
-
         except Exception as e:
             messagebox.showerror("Error", f"No se pudo aplicar el bloque de horarios:\n{str(e)}")
 
@@ -292,6 +277,5 @@ class VistaHorarios(ctk.CTkFrame):
                 if len(self.ids_maestros_seleccionados) == 1:
                     self.cargar_horarios_docente(self.ids_maestros_seleccionados[0])
                 messagebox.showinfo("Éxito", "Horario eliminado correctamente.")
-
             except Exception as e:
                 messagebox.showerror("Error", f"No se pudo eliminar:\n{str(e)}")

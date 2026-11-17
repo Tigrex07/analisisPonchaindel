@@ -2,50 +2,81 @@
 import sqlite3
 import os
 
+DB_NAME = "rrhh_lite.db"
+
 def obtener_conexion():
-    ruta_raiz = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    ruta_bd = os.path.join(ruta_raiz, "rrhh_lite.db")
-    
-    conn = sqlite3.connect(ruta_bd)
-    _inicializar_bd(conn)
+    conn = sqlite3.connect(DB_NAME)
+    conn.execute("PRAGMA foreign_keys = ON;")
     return conn
 
-def _inicializar_bd(conn):
-    """Crea las tablas esenciales eliminando redundancias."""
+def inicializar_base_datos():
+    conn = obtener_conexion()
     cursor = conn.cursor()
     
-    # Tabla de Maestros simplificada (Solo ID, Nombre, Tipo y Activo)
-    cursor.execute('''
+    # 1. Tabla maestros con area y sindicalizado
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS maestros (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             nombre TEXT NOT NULL,
-            tipo TEXT CHECK(tipo IN ('NORMAL', 'PA')) DEFAULT 'NORMAL',
-            activo INTEGER DEFAULT 1
+            tipo TEXT DEFAULT 'NORMAL',
+            activo INTEGER DEFAULT 1,
+            area TEXT DEFAULT 'Tecnologías de la Información',
+            sindicalizado INTEGER DEFAULT 0
         )
-    ''')
+    """)
+    
+    # Migración segura por si la tabla ya existía sin estas columnas
+    cursor.execute("PRAGMA table_info(maestros)")
+    columns = [col[1] for col in cursor.fetchall()]
+    if 'area' not in columns:
+        cursor.execute("ALTER TABLE maestros ADD COLUMN area TEXT DEFAULT 'Tecnologías de la Información'")
+    if 'sindicalizado' not in columns:
+        cursor.execute("ALTER TABLE maestros ADD COLUMN sindicalizado INTEGER DEFAULT 0")
 
-    # Tabla de Ponchadas
-    cursor.execute('''
+    # 2. Tabla ponchadas
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS ponchadas (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            idMaestro INTEGER NOT NULL,
-            fecha TEXT NOT NULL,
-            hora TEXT NOT NULL,
-            tipo TEXT CHECK(tipo IN ('ENTRADA', 'SALIDA', 'DESCONOCIDO')) DEFAULT 'DESCONOCIDO',
-            FOREIGN KEY (idMaestro) REFERENCES maestros(id) ON DELETE CASCADE
+            idMaestro INTEGER,
+            fecha TEXT,
+            hora TEXT,
+            tipo TEXT,
+            FOREIGN KEY(idMaestro) REFERENCES maestros(id)
         )
-    ''')
+    """)
 
-    # Tabla de Horarios (Lista para el siguiente módulo)
-    cursor.execute('''
+    # 3. Tabla horarios
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS horarios (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            idMaestro INTEGER NOT NULL,
-            dia_semana TEXT NOT NULL,
+            idMaestro INTEGER,
+            dia_semana TEXT,
             hora_entrada TEXT,
             hora_salida TEXT,
-            FOREIGN KEY (idMaestro) REFERENCES maestros(id) ON DELETE CASCADE
+            FOREIGN KEY(idMaestro) REFERENCES maestros(id)
         )
-    ''')
-    
+    """)
+
+    # 4. Tablas para Listas Personalizadas (Relación Muchos a Muchos independiente)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS listas_personalizadas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nombre TEXT UNIQUE NOT NULL
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS detalle_lista_maestros (
+            id_lista INTEGER,
+            id_maestro INTEGER,
+            PRIMARY KEY(id_lista, id_maestro),
+            FOREIGN KEY(id_lista) REFERENCES listas_personalizadas(id) ON DELETE CASCADE,
+            FOREIGN KEY(id_maestro) REFERENCES maestros(id) ON DELETE CASCADE
+        )
+    """)
+
     conn.commit()
+    conn.close()
+
+# Ejecutar inicialización al importar
+inicializar_base_datos()
