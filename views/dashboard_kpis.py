@@ -4,7 +4,6 @@ from tkinter import ttk
 from database.conexion import obtener_conexion
 
 class VentanaDirectorio(ctk.CTkToplevel):
-    """Ventana modal segura y exclusiva para consultar el catálogo de nombres reales mediante el ID base."""
     def __init__(self, parent):
         super().__init__(parent)
         self.title("📖 Directorio y Catálogo de Personal (Confidencial)")
@@ -117,7 +116,7 @@ class VistaKPIs(ctk.CTkFrame):
         self.entry_busqueda.pack(side="left", padx=5)
         self.entry_busqueda.bind("<KeyRelease>", self.cargar_datos)
 
-        self.btn_actualizar = ctk.CTkButton(filtros_frame, text="🔄 Recargar", width=90, command=self.limpiar_y_recargar)
+        self.btn_actualizar = ctk.CTkButton(filtros_frame, text="🔄 Recargar", width=90, command=self.cargar_datos)
         self.btn_actualizar.pack(side="left", padx=10)
 
         # Tarjetas de KPIs
@@ -130,7 +129,7 @@ class VistaKPIs(ctk.CTkFrame):
         self.lbl_retardos = self._crear_tarjeta(self.grid_kpis, "⚠️ Retardos Globales", "0", 0, 2, "#F59E0B")
         self.lbl_incompletos = self._crear_tarjeta(self.grid_kpis, "❌ Sin Salida", "0", 0, 3, "#EF4444")
 
-        # Tabla Principal
+        # Tabla Principal con CONTENEDOR Y BARRA DE DESPLAZAMIENTO (SCROLLBAR)
         tabla_frame = ctk.CTkFrame(self)
         tabla_frame.pack(fill="both", expand=True, padx=10, pady=10)
 
@@ -141,6 +140,10 @@ class VistaKPIs(ctk.CTkFrame):
         self.lbl_conteo_registros = ctk.CTkLabel(header_tabla_frame, text="Mostrando 0 registros", text_color="#9CA3AF", font=ctk.CTkFont(size=11))
         self.lbl_conteo_registros.pack(side="right")
 
+        # Contenedor interno para Tabla + Scrollbar vertical
+        tabla_container = ctk.CTkFrame(tabla_frame, fg_color="transparent")
+        tabla_container.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+
         style = ttk.Style()
         style.theme_use("default")
         style.configure("Treeview", background="#1E293B", foreground="white", fieldbackground="#1E293B", borderwidth=0, rowheight=24)
@@ -148,21 +151,25 @@ class VistaKPIs(ctk.CTkFrame):
         style.map('Treeview', background=[('selected', '#2563EB')])
 
         columnas = ("id", "nombre", "tipo", "total_asistencias", "retardos")
-        self.tabla = ttk.Treeview(tabla_frame, columns=columnas, show="headings", height=10)
+        self.tabla = ttk.Treeview(tabla_container, columns=columnas, show="headings", height=12)
         
         self.tabla.heading("id", text="ID Clave")
         self.tabla.heading("nombre", text="Identificador de Personal (Confidencial)")
         self.tabla.heading("tipo", text="Tipo")
         self.tabla.heading("total_asistencias", text="Total Entradas")
-        self.tabla.heading("retardos", text="Retardos (> 08:10)")
+        self.tabla.heading("retardos", text="Retardos (Basado en Horario)")
         
         self.tabla.column("id", width=80, anchor="center")
         self.tabla.column("nombre", width=340, anchor="w")
         self.tabla.column("tipo", width=110, anchor="center")
         self.tabla.column("total_asistencias", width=130, anchor="center")
-        self.tabla.column("retardos", width=130, anchor="center")
+        self.tabla.column("retardos", width=160, anchor="center")
         
-        self.tabla.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        scroll_y = ttk.Scrollbar(tabla_container, orient="vertical", command=self.tabla.yview)
+        self.tabla.configure(yscrollcommand=scroll_y.set)
+        
+        scroll_y.pack(side="right", fill="y")
+        self.tabla.pack(side="left", fill="both", expand=True)
 
     def _crear_tarjeta(self, parent, titulo, valor_inicial, fila, columna, color):
         card = ctk.CTkFrame(parent, fg_color="#1E293B", corner_radius=8)
@@ -174,11 +181,6 @@ class VistaKPIs(ctk.CTkFrame):
 
     def abrir_modal_directorio(self):
         VentanaDirectorio(self)
-
-    def limpiar_y_recargar(self):
-        self.entry_busqueda.delete(0, 'end')
-        self.combo_tipo.set("Todos")
-        self.cargar_datos()
 
     def cargar_datos(self, *args):
         texto_busqueda = self.entry_busqueda.get().strip()
@@ -207,8 +209,43 @@ class VistaKPIs(ctk.CTkFrame):
             cursor.execute(f"SELECT COUNT(*) FROM ponchadas p JOIN maestros m ON p.idMaestro = m.id {where_clause}", params)
             self.lbl_registros.configure(text=str(cursor.fetchone()[0]))
 
-            cursor.execute(f"SELECT COUNT(*) FROM ponchadas p JOIN maestros m ON p.idMaestro = m.id {where_clause} AND p.tipo = 'ENTRADA' AND p.hora > '08:10:00'", params)
+            query_retardos = f"""
+                SELECT COUNT(*) 
+                FROM ponchadas p 
+                JOIN maestros m ON p.idMaestro = m.id 
+                JOIN horarios h ON p.idMaestro = h.idMaestro 
+                    AND h.dia_semana = (
+                        CASE strftime('%w', p.fecha) 
+                            WHEN '0' THEN 'Domingo'
+                            WHEN '1' THEN 'Lunes'
+                            WHEN '2' THEN 'Martes'
+                            WHEN '3' THEN 'Miércoles'
+                            WHEN '4' THEN 'Jueves'
+                            WHEN '5' THEN 'Viernes'
+                            WHEN '6' THEN 'Sábado'
+                        END
+                    )
+                {where_clause} 
+                AND p.tipo = 'ENTRADA' 
+                AND p.hora > h.hora_entrada
+            """
+            cursor.execute(query_retardos, params)
             self.lbl_retardos.configure(text=str(cursor.fetchone()[0]))
+
+            query_sin_salida = f"""
+                SELECT COUNT(*) FROM ponchadas p 
+                JOIN maestros m ON p.idMaestro = m.id 
+                {where_clause} 
+                AND p.tipo = 'ENTRADA' 
+                AND NOT EXISTS (
+                    SELECT 1 FROM ponchadas p2 
+                    WHERE p2.idMaestro = p.idMaestro 
+                    AND p2.fecha = p.fecha 
+                    AND p2.tipo = 'SALIDA'
+                )
+            """
+            cursor.execute(query_sin_salida, params)
+            self.lbl_incompletos.configure(text=str(cursor.fetchone()[0]))
 
             for item in self.tabla.get_children():
                 self.tabla.delete(item)
@@ -216,7 +253,20 @@ class VistaKPIs(ctk.CTkFrame):
             query_tabla = f"""
                 SELECT m.id, m.tipo,
                        (SELECT COUNT(*) FROM ponchadas WHERE idMaestro = m.id AND tipo = 'ENTRADA') as asistencias,
-                       (SELECT COUNT(*) FROM ponchadas WHERE idMaestro = m.id AND tipo = 'ENTRADA' AND hora > '08:10:00') as retardos
+                       (SELECT COUNT(*) FROM ponchadas p 
+                        JOIN horarios h ON p.idMaestro = h.idMaestro 
+                            AND h.dia_semana = (
+                                CASE strftime('%w', p.fecha) 
+                                    WHEN '0' THEN 'Domingo'
+                                    WHEN '1' THEN 'Lunes'
+                                    WHEN '2' THEN 'Martes'
+                                    WHEN '3' THEN 'Miércoles'
+                                    WHEN '4' THEN 'Jueves'
+                                    WHEN '5' THEN 'Viernes'
+                                    WHEN '6' THEN 'Sábado'
+                                END
+                            )
+                        WHERE p.idMaestro = m.id AND p.tipo = 'ENTRADA' AND p.hora > h.hora_entrada) as retardos
                 FROM maestros m
                 {where_clause}
                 ORDER BY retardos DESC, m.id ASC

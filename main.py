@@ -1,3 +1,4 @@
+# main.py
 import customtkinter as ctk
 
 from views import VistaKPIs, VistaLimpiadorCSV, VistaHorarios
@@ -20,11 +21,11 @@ class AppPrincipal(ctk.CTk):
         self.tab_csv = self.tabview.add("📁 Limpiador e Importador CSV")
         self.tab_horarios = self.tabview.add("⏰ Gestión de Horarios")
 
-        # Inicializar y empaquetar vistas
+        # Inicializar vistas de manera independiente y ligera
         self.vista_kpis = VistaKPIs(self.tab_kpis)
         self.vista_kpis.pack(fill="both", expand=True)
 
-        self.vista_csv = VistaLimpiadorCSV(self.tab_csv, callback_actualizar_kpis=self.vista_kpis.cargar_datos)
+        self.vista_csv = VistaLimpiadorCSV(self.tab_csv, callback_actualizar_kpis=None)
         self.vista_csv.pack(fill="both", expand=True)
 
         self.vista_horarios = VistaHorarios(self.tab_horarios)
